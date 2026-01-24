@@ -11,6 +11,9 @@
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.6",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "express-useragent": "^2.0.2",
+    "firebase-admin": "^13.6.0",
+    "geoip-lite": "^1.4.10"
   }
 }
