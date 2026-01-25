@@ -28,8 +28,16 @@ app.post('/track', async (req, res) => {
         const autoDevice = isMobile ? "Mobile" : "Desktop";
         const deviceType = req.body.deviceType || autoDevice;
 
-        // Auto-detect Location
-        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        // --- IP DETECTION ---
+        // Get the raw header
+        let ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        
+        // If the header contains multiple IPs (comma-separated), take the first one
+        if (typeof ip === 'string' && ip.includes(',')) {
+            ip = ip.split(',')[0].trim();
+        }
+
+        // Now lookup the cleaned single IP
         const geo = geoip.lookup(ip);
         const country = geo ? geo.country : "Unknown";
 
