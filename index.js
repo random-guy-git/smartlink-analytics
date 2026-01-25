@@ -16,11 +16,11 @@ initializeApp({ credential: cert(serviceAccount) });
 const db = getFirestore();
 console.log("✅ Main Analytics Engine Linked to Team Database!");
 
-// --- 1. THE TRACKER (Updated for Hubs) ---
-// We now require 'hubId' so we can track "Total visits to the link hub" 
+// --- 1. THE TRACKER ---
+// We require 'hubId' so we can track "Total visits to the link hub of each User" 
 app.post('/track', async (req, res) => {
     try {
-        // We need BOTH IDs now
+        // We need BOTH IDs
         const { linkId, hubId } = req.body; 
         
         // Manual override for testing (Postman)
@@ -51,13 +51,11 @@ app.post('/track', async (req, res) => {
     }
 });
 
-// --- 2. THE MASTER DASHBOARD (The "Main Work") ---
-// This calculates "Top Performing Links" and "Total Visits" [cite: 141, 143]
+// --- 2. THE DASHBOARD ---
 app.get('/dashboard/:hubId', async (req, res) => {
     try {
         const hubId = req.params.hubId;
 
-        // Fetch ALL clicks for this user's profile
         const snapshot = await db.collection('analytics_logs')
                                  .where('hubId', '==', hubId)
                                  .get();
@@ -66,25 +64,30 @@ app.get('/dashboard/:hubId', async (req, res) => {
             return res.json({ totalVisits: 0, topLink: "None" });
         }
 
-        // --- INTELLIGENCE CALCULATION ---
         let totalVisits = 0;
-        let linkCounts = {}; // Stores counts like { "insta": 5, "github": 10 }
+        let linkCounts = {}; 
         let deviceStats = { Mobile: 0, Desktop: 0 };
+        // Country Stats
+        let countryStats = {}; 
 
         snapshot.forEach(doc => {
             const data = doc.data();
             totalVisits++;
 
-            // 1. Count per Link (To find the Winner)
+            // 1. Link Counts
             const link = data.linkId;
             linkCounts[link] = (linkCounts[link] || 0) + 1;
 
-            // 2. Count Devices (To prove Rules work)
+            // 2. Device Counts
             const device = data.meta.device || "Unknown";
             deviceStats[device] = (deviceStats[device] || 0) + 1;
+
+            // 3. Country Counts
+            const country = data.meta.country || "Unknown";
+            countryStats[country] = (countryStats[country] || 0) + 1;
         });
 
-        // 3. Find Top Performing Link 
+        // Find Top Performing Link
         let topLink = "";
         let maxClicks = 0;
         for (const [link, count] of Object.entries(linkCounts)) {
@@ -94,7 +97,6 @@ app.get('/dashboard/:hubId', async (req, res) => {
             }
         }
 
-        // Send the "Structured Data Output" [cite: 144]
         res.json({
             hubId: hubId,
             totalVisits: totalVisits,
@@ -103,6 +105,7 @@ app.get('/dashboard/:hubId', async (req, res) => {
                 clicks: maxClicks
             },
             deviceBreakdown: deviceStats,
+            countryBreakdown: countryStats,
             detailedLinkStats: linkCounts
         });
 
