@@ -10,103 +10,109 @@ app.use(cors());
 app.use(express.json());
 app.use(useragent.express());
 
-// --- DATABASE SETUP ---
+// --- DATABASE CONNECT ---
 const serviceAccount = require('./serviceAccountKey.json');
-initializeApp({
-  credential: cert(serviceAccount)
-});
+initializeApp({ credential: cert(serviceAccount) });
 const db = getFirestore();
-console.log("✅ Smart Link Analytics Engine Ready!");
+console.log("✅ Main Analytics Engine Linked to Team Database!");
 
-// --- 1. THE TRACKER (WRITING DATA) ---
+// --- 1. THE TRACKER (Updated for Hubs) ---
+// We now require 'hubId' so we can track "Total visits to the link hub" 
 app.post('/track', async (req, res) => {
     try {
-        const { linkId } = req.body;
-        if (!linkId) return res.status(400).send("Error: Link ID is missing");
+        // We need BOTH IDs now
+        const { linkId, hubId } = req.body; 
+        
+        // Manual override for testing (Postman)
+        const isMobile = req.useragent.isMobile;
+        const autoDevice = isMobile ? "Mobile" : "Desktop";
+        const deviceType = req.body.deviceType || autoDevice;
 
-        // Auto-detect Intelligence
+        // Auto-detect Location
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
         const geo = geoip.lookup(ip);
         const country = geo ? geo.country : "Unknown";
-        
-        const isMobile = req.useragent.isMobile;
-        const autoDetectedType = isMobile ? "Mobile" : "Desktop";
-        
-        // This '||' means: Use req.body.deviceType IF it exists, OR use autoDetectedType
-        const deviceType = req.body.deviceType || autoDetectedType;
 
         const clickData = {
             linkId: linkId,
+            hubId: hubId, // CRITICAL: Links this click to a specific user profile
             timestamp: FieldValue.serverTimestamp(),
-            meta: { device: deviceType, country: country, browser: browser, ip: ip }
+            meta: { device: deviceType, country: country, ip: ip }
         };
 
+        // Save to Shared Database
         await db.collection('analytics_logs').add(clickData);
-        console.log(`✅ Tracked: ${linkId} | ${deviceType} | ${country}`);
+        console.log(`✅ Tracked Click: Hub ${hubId} -> Link ${linkId} (${deviceType})`);
         res.status(200).send({ success: true });
 
     } catch (error) {
         console.error("Tracking Error:", error);
-        res.status(500).send("Internal Server Error");
+        res.status(500).send("Error tracking click");
     }
 });
 
-// --- 2. THE DASHBOARD API (READING DATA) ---
-// This enables the "Visualization" and "Performance Monitoring" 
-app.get('/analytics/:linkId', async (req, res) => {
+// --- 2. THE MASTER DASHBOARD (The "Main Work") ---
+// This calculates "Top Performing Links" and "Total Visits" [cite: 141, 143]
+app.get('/dashboard/:hubId', async (req, res) => {
     try {
-        const targetLinkId = req.params.linkId;
+        const hubId = req.params.hubId;
 
-        // A. FETCH RAW DATA FROM FIREBASE
-        // "Give me all logs where linkId matches the one requested"
+        // Fetch ALL clicks for this user's profile
         const snapshot = await db.collection('analytics_logs')
-                                 .where('linkId', '==', targetLinkId)
+                                 .where('hubId', '==', hubId)
                                  .get();
 
         if (snapshot.empty) {
-            return res.json({ message: "No clicks found yet", totalClicks: 0 });
+            return res.json({ totalVisits: 0, topLink: "None" });
         }
 
-        // B. CALCULATE THE BREAKDOWNS (The Intelligence Part)
-        let totalClicks = 0;
+        // --- INTELLIGENCE CALCULATION ---
+        let totalVisits = 0;
+        let linkCounts = {}; // Stores counts like { "insta": 5, "github": 10 }
         let deviceStats = { Mobile: 0, Desktop: 0 };
-        let countryStats = {};
 
         snapshot.forEach(doc => {
             const data = doc.data();
-            totalClicks++;
+            totalVisits++;
 
-            // 1. Count Devices (For Device Rules)
+            // 1. Count per Link (To find the Winner)
+            const link = data.linkId;
+            linkCounts[link] = (linkCounts[link] || 0) + 1;
+
+            // 2. Count Devices (To prove Rules work)
             const device = data.meta.device || "Unknown";
-            if (deviceStats[device] !== undefined) {
-                deviceStats[device]++;
-            } else {
-                deviceStats[device] = 1; // Handle unexpected devices
-            }
-
-            // 2. Count Countries (For Location Rules)
-            const country = data.meta.country || "Unknown";
-            // If country exists in our list, add 1. If not, start at 1.
-            countryStats[country] = (countryStats[country] || 0) + 1;
+            deviceStats[device] = (deviceStats[device] || 0) + 1;
         });
 
-        // C. SEND THE REPORT CARD
-        res.json({
-            linkId: targetLinkId,
-            totalClicks: totalClicks, // "Track individual link click counts" [cite: 142]
-            insights: {
-                deviceBreakdown: deviceStats,
-                countryBreakdown: countryStats
+        // 3. Find Top Performing Link 
+        let topLink = "";
+        let maxClicks = 0;
+        for (const [link, count] of Object.entries(linkCounts)) {
+            if (count > maxClicks) {
+                maxClicks = count;
+                topLink = link;
             }
+        }
+
+        // Send the "Structured Data Output" [cite: 144]
+        res.json({
+            hubId: hubId,
+            totalVisits: totalVisits,
+            topPerformingLink: {
+                id: topLink,
+                clicks: maxClicks
+            },
+            deviceBreakdown: deviceStats,
+            detailedLinkStats: linkCounts
         });
 
     } catch (error) {
-        console.error("Analytics Error:", error);
-        res.status(500).send("Could not fetch analytics");
+        console.error("Dashboard Error:", error);
+        res.status(500).send("Could not generate dashboard");
     }
 });
 
 const PORT = 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on Port ${PORT}`);
+  console.log(`🚀 Main Work Started on Port ${PORT}`);
 });
