@@ -30,54 +30,75 @@ initializeApp({ credential: cert(serviceAccount) });
 const db = getFirestore();
 console.log("✅ Main Analytics Engine Linked to Team Database!");
 
-// --- 1. THE TRACKER ---
+// --- 1. THE TRACKER (Crash-Proof Version) ---
 app.post('/track', async (req, res) => {
     try {
+        console.log("📨 Incoming Request Body:", req.body); // Debug Log 1
+
         const { linkId, hubId, category } = req.body;
 
-        // Validation: Don't crash if data is missing
+        // 1. Validation
         if (!linkId || !hubId) {
+            console.error("❌ Missing fields");
             return res.status(400).json({ error: "Missing linkId or hubId" });
         }
 
-        // DEVICE FIX: Priority Check
-        // 1. Trust the 'deviceType' sent manually (for Postman/Testing)
-        // 2. If missing, check the User-Agent (for real usage)
+        // 2. Robust Device Detection
         let finalDevice = "Desktop";
-        
+        // Check manual override first
         if (req.body.deviceType) {
-            finalDevice = req.body.deviceType; // Force override
-        } else if (req.useragent && req.useragent.isMobile) {
+            finalDevice = req.body.deviceType;
+        } 
+        // Then check User-Agent safely
+        else if (req.useragent && req.useragent.isMobile) {
             finalDevice = "Mobile";
         }
 
-        // IP Detection (Robust)
-        let ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-        if (typeof ip === 'string' && ip.includes(',')) {
-            ip = ip.split(',')[0].trim();
+        // 3. Robust IP & Geo Detection
+        let ip = "0.0.0.0";
+        try {
+            const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+            if (rawIp && typeof rawIp === 'string') {
+                ip = rawIp.split(',')[0].trim();
+            }
+        } catch (e) {
+            console.warn("⚠️ IP Detection Failed, defaulting to 0.0.0.0");
         }
 
-        // Geo Lookup (Handle Localhost)
-        const geo = geoip.lookup(ip);
-        const country = geo ? geo.country : "Unknown";
+        let country = "Unknown";
+        try {
+            const geo = geoip.lookup(ip);
+            if (geo && geo.country) country = geo.country;
+        } catch (e) {
+            console.warn("⚠️ GeoIP Failed, defaulting to Unknown");
+        }
 
+        // 4. Construct Data
         const clickData = {
-            linkId: linkId,
-            hubId: hubId,
+            linkId: String(linkId), // Ensure String
+            hubId: String(hubId),   // Ensure String
             category: category || "Others",
             timestamp: new Date().toISOString(),
-            meta: { device: deviceType, country: country, ip: ip }
+            meta: { 
+                device: finalDevice, 
+                country: country, 
+                ip: ip 
+            }
         };
 
-        // Write to Firestore
-        await db.collection('analytics_logs').add(clickData);
+        console.log("💾 Saving to Firestore:", clickData); // Debug Log 2
 
-        console.log(`✅ Tracked: ${hubId} -> ${linkId} [${country}]`);
+        // 5. Database Write
+        await db.collection('analytics_logs').add(clickData);
+        
+        console.log(`✅ Tracked Successfully: ${hubId} -> ${linkId}`);
         res.status(200).json({ success: true });
 
     } catch (error) {
-        console.error("❌ Tracking Error:", error);
-        res.status(500).json({ error: "Internal Server Error" });
+        // THIS IS THE ERROR WE NEED TO SEE IN RENDER LOGS
+        console.error("❌ CRITICAL TRACKING ERROR:", error); 
+        // Send the actual error message back to Postman for debugging (Temporary)
+        res.status(500).json({ error: error.message || "Internal Server Error" });
     }
 });
 
