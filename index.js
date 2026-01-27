@@ -40,10 +40,16 @@ app.post('/track', async (req, res) => {
             return res.status(400).json({ error: "Missing linkId or hubId" });
         }
 
-        // Device Detection
-        const isMobile = req.useragent ? req.useragent.isMobile : false;
-        const autoDevice = isMobile ? "Mobile" : "Desktop";
-        const deviceType = req.body.deviceType || autoDevice;
+        // DEVICE FIX: Priority Check
+        // 1. Trust the 'deviceType' sent manually (for Postman/Testing)
+        // 2. If missing, check the User-Agent (for real usage)
+        let finalDevice = "Desktop";
+        
+        if (req.body.deviceType) {
+            finalDevice = req.body.deviceType; // Force override
+        } else if (req.useragent && req.useragent.isMobile) {
+            finalDevice = "Mobile";
+        }
 
         // IP Detection (Robust)
         let ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
@@ -237,27 +243,36 @@ app.get('/dashboard/:hubId', async (req, res) => {
         const hubId = req.params.hubId;
         const range = req.query.range || 'all';
 
-        const now = new Date();
+        // TIMEZONE FIX: Force IST (Asia/Kolkata) Calculation
+        // We use a helper to get current time in IST
+        const getISTDate = (date) => new Date(date.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+
+        const nowUTC = new Date();
+        const nowIST = getISTDate(nowUTC);
+
         let startDate = new Date(0);
-        let endDate = new Date(); // Default: Now
+        let endDate = new Date(nowIST); // Default: Now
         let periodName = "All Time";
 
         // FIX: Explicit End Dates to prevent "Yesterday" including "Today"
         if (range === 'today') {
-            startDate = new Date(); startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(); endDate.setHours(23, 59, 59, 999);
+            startDate = new Date(nowIST); startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(nowIST); endDate.setHours(23, 59, 59, 999);
             periodName = "Today";
         } else if (range === 'yesterday') {
-            startDate = new Date(); startDate.setDate(now.getDate() - 1); startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(); endDate.setDate(now.getDate() - 1); endDate.setHours(23, 59, 59, 999);
+            startDate = new Date(nowIST); startDate.setDate(now.getDate() - 1); startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(nowIST); endDate.setDate(now.getDate() - 1); endDate.setHours(23, 59, 59, 999);
             periodName = "Yesterday";
         } else if (range === '7d') {
-            startDate.setDate(now.getDate() - 7);
+            startDate.setDate(now.getDate(nowIST) - 7);
             periodName = "Last 7 Days";
         } else if (range === '30d') {
-            startDate.setDate(now.getDate() - 30);
+            startDate.setDate(now.getDate(nowIST) - 30);
             periodName = "Last 30 Days";
-        }
+        } else if (range === '90d') {
+            startDate.setDate(now.getDate(nowIST) - 90);
+            periodName = "Last 90 Days";
+        } // else 'all' time
 
         // Fetch & Filter
         const snapshot = await db.collection('analytics_logs').where('hubId', '==', hubId).get();
@@ -273,14 +288,17 @@ app.get('/dashboard/:hubId', async (req, res) => {
 
         snapshot.forEach(doc => {
             const data = doc.data();
-            const clickTime = new Date(data.timestamp);
+            const utcDate = new Date(data.timestamp);
+
+            // CONVERT CLICK TIME TO IST FOR DISPLAY
+            const istDate = getISTDate(utcDate);
 
             // FIX: Strict Range Check applied BEFORE counting stats
-            if (clickTime >= startDate && clickTime <= endDate) {
+            if (istDate >= startDate && istDate <= endDate) {
                 stats.total++;
                 
                 // Hour (For Peak Time)
-                const h = clickTime.getHours();
+                const h = istDate.getHours();
                 stats.byHour[h] = (stats.byHour[h] || 0) + 1;
 
                 // Categories (MAPPING RESTORED)
