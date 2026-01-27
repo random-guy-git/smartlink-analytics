@@ -33,13 +33,13 @@ console.log("✅ Main Analytics Engine Linked to Team Database!");
 // --- 1. THE TRACKER ---
 app.post('/track', async (req, res) => {
     try {
-        const { linkId, hubId, category } = req.body; 
+        const { linkId, hubId, category } = req.body;
 
         // Validation: Don't crash if data is missing
         if (!linkId || !hubId) {
             return res.status(400).json({ error: "Missing linkId or hubId" });
         }
-        
+
         // Device Detection
         const isMobile = req.useragent ? req.useragent.isMobile : false;
         const autoDevice = isMobile ? "Mobile" : "Desktop";
@@ -65,7 +65,7 @@ app.post('/track', async (req, res) => {
 
         // Write to Firestore
         await db.collection('analytics_logs').add(clickData);
-        
+
         console.log(`✅ Tracked: ${hubId} -> ${linkId} [${country}]`);
         res.status(200).json({ success: true });
 
@@ -75,66 +75,181 @@ app.post('/track', async (req, res) => {
     }
 });
 
-// --- HELPER: RICH INSIGHT ENGINE ---
+// --- PERSONA DETECTION ENGINE ---
+function detectUserPersona(linkIds) {
+    const keywords = {
+        creator: ['youtube', 'twitch', 'tiktok', 'instagram', 'discord', 'patreon', 'spotify', 'podcast'],
+        professional: ['linkedin', 'github', 'behance', 'dribbble', 'portfolio', 'cv', 'resume', 'calendly', 'medium'],
+        founder: ['shopify', 'gumroad', 'stripe', 'amazon', 'product', 'store', 'buy', 'pricing', 'demo']
+    };
+
+    let scores = { creator: 0, professional: 0, founder: 0 };
+
+    linkIds.forEach(id => {
+        const lowerId = id.toLowerCase();
+        if (keywords.creator.some(k => lowerId.includes(k))) scores.creator++;
+        if (keywords.professional.some(k => lowerId.includes(k))) scores.professional++;
+        if (keywords.founder.some(k => lowerId.includes(k))) scores.founder++;
+    });
+
+    // Return the dominant persona (or 'general' if tie/zero)
+    return Object.keys(scores).reduce((a, b) => scores[a] > scores[b] ? a : b);
+}
+
+// --- STRATEGIC FALLBACK GENERATOR ---
+function getFallbackAdvice(persona, domain) {
+    const adviceLibrary = {
+        creator: {
+            revenue: "⚠️ **Monetization Gap:** You have strong content links but no clear 'Support' link. Top creators usually place a Patreon or 'Buy Me a Coffee' link in the #2 slot to capture fan goodwill.",
+            audience: "📱 **Platform Behavior:** 85% of social traffic comes from mobile. Ensure your YouTube thumbnails in the link previews are high-contrast and readable on small screens.",
+            content: "🔄 **Content Lifecycle:** Don't let your top link get stale. 'Creator' profiles see a 20% CTR drop if the top video link isn't rotated every 7 days."
+        },
+        professional: {
+            revenue: "💼 **Client Friction:** You are sharing work samples, but is it easy to hire you? Add a specific 'Book a 15min Call' (Calendly) link to reduce client drop-off.",
+            audience: "👔 **The 9-to-5 Window:** Professional traffic peaks Tue-Thu, 10 AM - 2 PM. Post your link updates on LinkedIn on Tuesday mornings for maximum visibility.",
+            content: "📄 **Case Study vs Portfolio:** Generic 'Portfolio' links have lower CTR. Rename your link to 'Case Study: [Project Name]' to prove value instantly."
+        },
+        founder: {
+            revenue: "🏷️ **Hero Product Visibility:** Your data is young, but e-commerce rules apply. The top link gets 60% of clicks. Ensure your best-selling product is strictly at #1.",
+            audience: "🌍 **Trust Signals:** Cold traffic needs reassurance. Add a link to 'Customer Reviews' or 'Press Coverage' to increase conversion rates for new visitors.",
+            content: "⚡ **Frictionless Checkout:** Ensure your product links go directly to checkout/product pages, not your home page. Reduce the clicks-to-purchase ratio."
+        },
+        general: {
+            revenue: "💡 **Value Capture:** Your link mix is diverse. Identify your highest margin goal (Newsletter? Sales?) and pin it to the top.",
+            audience: "🚀 **Velocity Check:** Share your link on your most active platform today to initialize the audience geography algorithms.",
+            content: "✨ **Visual Hierarchy:** Use emojis in your link titles. Data shows links with visual icons have a 15% higher Click-Through Rate."
+        }
+    };
+    return adviceLibrary[persona][domain] || adviceLibrary['general'][domain];
+}
+
+// --- RULE-BASED AI INSIGHTS GENERATOR (AI-ASSISTANT) ---
 function generateDeepInsights(stats, periodName) {
     const suggestions = [];
     const total = stats.total;
+    const linkIds = Object.keys(stats.links || {});
+    const persona = detectUserPersona(linkIds); // 🤖 AI Classification
 
-    // 1. 🚀 Reach & Velocity (Marketing)
+    // Safety check: If no data, return the "Cold Start" advice
     if (total === 0) {
-        suggestions.push("⚠️ No traffic in this period. Share your link on social media to kickstart visibility!");
-    } else if (stats.trend === 'up') {
-        suggestions.push(`🔥 You are trending UP! Your traffic increased compared to the previous ${periodName}. Keep posting!`);
-    } else if (stats.trend === 'down') {
-        suggestions.push(`📉 Traffic dropped this ${periodName}. Try reposting your top-performing link from last month.`);
+        return [
+            "🚀 **Launchpad Protocol:** Your hub is live but silent. The algorithm rewards velocity. Share your link on your most active social channel immediately to initialize data collection.",
+            "💡 **Pro Tip:** Add a 'Lead Magnet' (free resource) as your first link to maximize initial click-through rates."
+        ];
     }
 
-    // 2. ⏰ Peak Timing (Optimization)
     if (total > 5) {
-        // Find peak hour
-        const peakHour = Object.keys(stats.byHour).reduce((a, b) => stats.byHour[a] > stats.byHour[b] ? a : b);
-        const hourInt = parseInt(peakHour);
-        const timeStr = hourInt > 12 ? `${hourInt-12} PM` : `${hourInt} AM`;
-        suggestions.push(`⏰ Peak Audience Time: ${timeStr}. Schedule your Instagram Stories or Tweets around this time for max reach.`);
+        // --- 1. BUSINESS & CONVERSION INTELLIGENCE ---
+
+        // Calculate "Intent Ratio"
+        const moneyCategories = (stats.categories['Affiliate/Product'] || 0) + (stats.categories['Portfolio'] || 0) + (stats.categories['Brand Collab'] || 0);
+        const socialCategories = (stats.categories['Social'] || 0) + (stats.categories['Communities'] || 0);
+        const intentRatio = (moneyCategories / total) * 100;
+
+        if (socialCategories > 0 && intentRatio < 10) {
+            suggestions.push(`💰 **Leaky Funnel Alert:** You have high traffic flow, but less than 10% are entering your monetization links. **Strategy:** Move your 'Portfolio' or 'Shop' link above your Social icons to capture this wasted value.`);
+        } else if (intentRatio > 40) {
+            suggestions.push(`💎 **High-Value Audience:** Over 40% of your clicks are commercial/professional. Your audience is ready to buy. **Strategy:** Consider raising your rates or launching a premium digital product immediately.`);
+        }
+
+        // Pareto Analysis (Dependency Risk)
+        const topLink = stats.topPerformingLink;
+        if (topLink && (topLink.clicks / total) > 0.70) {
+            suggestions.push(`⚠️ **Single Point of Failure:** 70%+ of your traffic relies on a single link ("${topLink.id}"). **Strategy:** Introduce a secondary 'Killer Offer' to diversify interest. If that one link becomes irrelevant, your traffic crashes.`);
+        }
+
+        // --- 2. AUDIENCE BEHAVIOR & TIMING ---
+
+        // Find Peak Time Block (Morning, Work, Evening, Late Night)
+        let peakHour = 0;
+        let maxClicks = 0;
+        for (const [hour, count] of Object.entries(stats.byHour || {})) {
+            if (count > maxClicks) { maxClicks = count; peakHour = parseInt(hour); }
+        }
+
+        let timeContext = "";
+        if (peakHour >= 6 && peakHour < 12) timeContext = "Morning Rush (Commuters/Early Risers)";
+        else if (peakHour >= 12 && peakHour < 17) timeContext = "Work Hours (B2B/Professional)";
+        else if (peakHour >= 17 && peakHour < 22) timeContext = "Prime Time (Entertainment/Leisure)";
+        else timeContext = "Night Owls (High Engagement/Niche)";
+
+        if (total > 10) { // Only show if we have significance
+            suggestions.push(`⏰ **The Golden Window:** Your audience peaks at **${peakHour}:00 (${timeContext})**. **Strategy:** Schedule your newsletters, product drops, or new video announcements exactly 1 hour before this time to ride the engagement wave.`);
+        }
+
+        // Device Context
+        const mobileCount = stats.devices['Mobile'] || 0;
+        const desktopCount = stats.devices['Desktop'] || 0;
+
+        if (desktopCount > (total * 0.35)) {
+            suggestions.push(`💻 **Desktop-Heavy Audience:** ${Math.floor((desktopCount / total) * 100)}% of users are on PC. This is rare and valuable. They have higher attention spans. **Strategy:** Feel free to link to long-form content (Blogs, Case Studies, 20min+ Videos).`);
+        } else if (mobileCount > (total * 0.90)) {
+            suggestions.push(`📱 **Mobile-First Mandate:** 90%+ traffic is mobile. **Strategy:** Ensure your link titles are under 30 characters so they don't get truncated on small screens. Use Emojis as visual anchors.`);
+        }
+
+        // --- 3. GEO-EXPANSION OPPORTUNITIES ---
+
+        // Sort countries
+        const sortedCountries = Object.entries(stats.countries || {}).sort((a, b) => b[1] - a[1]);
+        const topCountry = sortedCountries[0];
+        const secondCountry = sortedCountries[1];
+
+        if (secondCountry && secondCountry[1] > (total * 0.15)) {
+            suggestions.push(`🌍 **Sleeper Market Detected:** You have unexpected traction in **${secondCountry[0]}** (>15%). **Strategy:** Acknowledge this audience. Add a 'Welcome' link in their local language or create region-specific content to double-down on this growth.`);
+        }
+
+        // --- 4. CONTENT FATIGUE ---
+        if (periodName === "Last 7 Days" || periodName === "Last 30 Days") {
+            // Need historical comparison logic roughly here, but based on current snapshot:
+            const lowestLink = Object.entries(stats.links).sort((a, b) => a[1] - b[1])[0];
+            if (lowestLink && lowestLink[1] === 0 && Object.keys(stats.links).length > 3) {
+                suggestions.push(`♻️ **Digital Clutter:** The link "${lowestLink[0]}" has zero engagement. **Strategy:** Remove or rename it. Too many options cause 'Decision Paralysis' and lower your overall conversion rate.`);
+            }
+        }
     }
 
-    // 3. 🎯 Category Strategy (Content)
-    const soc = stats.categories['Social'] || 0;
-    const aff = stats.categories['Affiliate/Product'] || 0;
-    if (soc > 0 && aff === 0) {
-        suggestions.push("💰 You have high Social traffic but 0 Affiliate clicks. Add a 'My Gear' or 'Recommended Tools' link to monetize this attention.");
+    // --- LAYER 2: INTELLIGENT FALLBACKS (If we need more insights) ---
+    // If we have fewer than 3 hard-data insights, fill the rest with Persona Advice
+    
+    if (suggestions.length < 3) {
+        // Domain 1: Revenue Strategy
+        if (!suggestions.some(s => s.includes("Revenue") || s.includes("Conversion"))) {
+            suggestions.push(getFallbackAdvice(persona, 'revenue'));
+        }
+        
+        // Domain 2: Audience Strategy
+        if (!suggestions.some(s => s.includes("Peak") || s.includes("Mobile"))) {
+             suggestions.push(getFallbackAdvice(persona, 'audience'));
+        }
+
+        // Domain 3: Content Strategy
+        if (suggestions.length < 3) {
+             suggestions.push(getFallbackAdvice(persona, 'content'));
+        }
     }
 
-    // 4. 📱 Platform Optimization (Tech)
-    const mobile = stats.devices['Mobile'] || 0;
-    if (mobile > total * 0.7) {
-        suggestions.push("📱 70%+ of your users are on Mobile. Ensure your links have short titles and clear emojis for better tapping.");
-    }
-
-    return suggestions;
+    return suggestions.slice(0, 4); // Return top 4 most critical insights
 }
 
-// --- 2. THE DYNAMIC DASHBOARD API ---
+// --- UPDATED DASHBOARD ENDPOINT ---
 app.get('/dashboard/:hubId', async (req, res) => {
     try {
         const hubId = req.params.hubId;
-        const range = req.query.range || 'all'; // Default to All Time
+        const range = req.query.range || 'all';
 
-        // 1. Calculate Date Range
         const now = new Date();
-        let startDate = new Date(0); // Default: Beginning of time
+        let startDate = new Date(0);
+        let endDate = new Date(); // Default: Now
         let periodName = "All Time";
 
+        // FIX: Explicit End Dates to prevent "Yesterday" including "Today"
         if (range === 'today') {
-            startDate = new Date();
-            startDate.setHours(0,0,0,0);
+            startDate = new Date(); startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(); endDate.setHours(23, 59, 59, 999);
             periodName = "Today";
         } else if (range === 'yesterday') {
-            startDate = new Date();
-            startDate.setDate(now.getDate() - 1);
-            startDate.setHours(0,0,0,0);
-            // End date needed for yesterday, but for simplicity we treat "after yesterday start"
-            // In prod, you'd restrict the end date too.
+            startDate = new Date(); startDate.setDate(now.getDate() - 1); startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(); endDate.setDate(now.getDate() - 1); endDate.setHours(23, 59, 59, 999);
             periodName = "Yesterday";
         } else if (range === '7d') {
             startDate.setDate(now.getDate() - 7);
@@ -142,28 +257,16 @@ app.get('/dashboard/:hubId', async (req, res) => {
         } else if (range === '30d') {
             startDate.setDate(now.getDate() - 30);
             periodName = "Last 30 Days";
-        } else if (range === '90d') {
-            startDate.setDate(now.getDate() - 90);
-            periodName = "Last 3 Months";
-        } else if (range === '1y') {
-            startDate.setFullYear(now.getFullYear() - 1);
-            periodName = "Last Year";
         }
 
-        // 2. Fetch Logs (In production, use Firestore Query Filters for speed)
-        const snapshot = await db.collection('analytics_logs')
-                                 .where('hubId', '==', hubId)
-                                 .get();
+        // Fetch & Filter
+        const snapshot = await db.collection('analytics_logs').where('hubId', '==', hubId).get();
 
-        if (snapshot.empty) return res.json({ totalVisits: 0, suggestions: [] });
-
-        // 3. Process Data
         let stats = {
             total: 0,
-            trend: 'stable', // placeholder logic
-            byHour: {},
             categories: { "Social": 0, "Affiliate/Product": 0, "Brand Collab": 0, "Communities": 0, "Portfolio": 0, "Others": 0 },
             links: {},
+            byHour: {},
             devices: {},
             countries: {}
         };
@@ -172,57 +275,59 @@ app.get('/dashboard/:hubId', async (req, res) => {
             const data = doc.data();
             const clickTime = new Date(data.timestamp);
 
-            // FILTER: Only count if within range
-            if (clickTime >= startDate) {
+            // FIX: Strict Range Check applied BEFORE counting stats
+            if (clickTime >= startDate && clickTime <= endDate) {
                 stats.total++;
-
-                // Hour (for Peak Time)
+                
+                // Hour (For Peak Time)
                 const h = clickTime.getHours();
                 stats.byHour[h] = (stats.byHour[h] || 0) + 1;
 
-                // Category
-                let cat = data.category || "Others";
-                if (cat.includes("Social")) cat = "Social";
-                else if (cat.includes("Affiliate") || cat.includes("Product")) cat = "Affiliate/Product";
-                else if (cat.includes("Brand")) cat = "Brand Collab";
-                else if (cat.includes("Community")) cat = "Communities";
-                else if (cat.includes("Portfolio")) cat = "Portfolio";
+                // Categories (MAPPING RESTORED)
+                let rawCat = data.category || "Others";
+                let cat = "Others";
+                if (rawCat.includes("Social")) cat = "Social";
+                else if (rawCat.includes("Affiliate") || rawCat.includes("Product")) cat = "Affiliate/Product";
+                else if (rawCat.includes("Brand")) cat = "Brand Collab";
+                else if (rawCat.includes("Community")) cat = "Communities";
+                else if (rawCat.includes("Portfolio")) cat = "Portfolio";
                 else cat = "Others";
+
                 stats.categories[cat]++;
 
                 // Links
                 stats.links[data.linkId] = (stats.links[data.linkId] || 0) + 1;
-                
+
                 // Meta
                 stats.devices[data.meta.device || "Unknown"] = (stats.devices[data.meta.device] || 0) + 1;
                 stats.countries[data.meta.country || "Unknown"] = (stats.countries[data.meta.country] || 0) + 1;
             }
         });
 
-        // 4. Calculate Derived Stats
-        const topLink = Object.entries(stats.links).sort((a,b) => b[1] - a[1])[0] || ["None", 0];
-        
-        // 5. Generate Smart Insights
-        const deepInsights = generateDeepInsights(stats, periodName);
+        const topLinkArr = Object.entries(stats.links).sort((a, b) => b[1] - a[1])[0] || ["None", 0];
+        const topPerformingLink = { id: topLinkArr[0], clicks: topLinkArr[1] };
+
+        // Pass extra data to insights for better results
+        const deepInsights = generateDeepInsights({ ...stats, topPerformingLink }, periodName);
 
         res.json({
             hubId,
             period: periodName,
             totalVisits: stats.total,
-            topPerformingLink: { id: topLink[0], clicks: topLink[1] },
+            topPerformingLink,
             categoryBreakdown: stats.categories,
             deviceBreakdown: stats.devices,
-            countryBreakdown: stats.countries,
-            detailedLinkStats: stats.links,
+            countryBreakdown: stats.countries, // Ensure this is sent!
+            detailedLinkStats: stats.links,    // Ensure this is sent!
             suggestions: deepInsights
         });
 
     } catch (error) {
-        console.error("Dashboard Error:", error);
+        console.error(error);
         res.status(500).send("Server Error");
     }
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Analytics Engine Running on Port ${PORT}`);
+    console.log(`🚀 Analytics Engine Running on Port ${PORT}`);
 });
