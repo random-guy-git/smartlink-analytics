@@ -319,6 +319,7 @@ app.get('/dashboard/:hubId', async (req, res) => {
             deviceBreakdown: stats.devices,
             countryBreakdown: stats.countries, // Ensure this is sent!
             detailedLinkStats: stats.links,    // Ensure this is sent!
+            byHour: stats.byHour,
             suggestions: deepInsights
         });
 
