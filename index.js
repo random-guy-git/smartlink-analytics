@@ -76,7 +76,7 @@ app.post('/track', async (req, res) => {
 });
 
 // --- HELPER: RICH INSIGHT ENGINE ---
-function generateDeepInsights(stats, deviceStats, periodName, peakHour) {
+function generateDeepInsights(stats, periodName) {
     const suggestions = [];
     const total = stats.total;
 
