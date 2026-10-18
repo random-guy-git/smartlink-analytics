@@ -3,7 +3,7 @@
 > A next-generation link management platform that adapts content based on user context.
 
 ## 🚀 Deployment
-* **Live Website:** [smartlink-analytics.vercel.app]
+* **Live Website:** [https://smartlink-analytics.vercel.app]
 * **Analytics Engine:** [https://smartlink-analytics-1.onrender.com]
 
 ---
