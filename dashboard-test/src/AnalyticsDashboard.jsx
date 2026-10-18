@@ -20,32 +20,63 @@ const AnalyticsDashboard = ({ hubId }) => {
   const [range, setRange] = useState('all');
   const dashboardRef = useRef();
 
+  
   // --- DATA FETCHING ---
   useEffect(() => {
-    if (!hubId) return;
-    setLoading(true);
-    
-    const safetyTimer = setTimeout(() => {
-       if(loading) setLoading(false); 
-    }, 8000);
+    if (!hubId) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
 
-    fetch(`${ANALYTICS_API_URL}/dashboard/${hubId}?range=${range}`)
-      .then(res => {
-        if (!res.ok) throw new Error("API Error");
+    const controller = new AbortController();
+    let isCurrentRequest = true;
+
+    setLoading(true);
+
+    const url =
+      `${ANALYTICS_API_URL}/dashboard/` +
+      `${encodeURIComponent(hubId)}?range=${encodeURIComponent(range)}`;
+
+    fetch(url, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`API Error: ${res.status}`);
+        }
+
         return res.json();
       })
-      .then(json => {
+      .then((json) => {
+        // Ignore responses belonging to an outdated filter.
+        if (!isCurrentRequest) return;
+
         setData(json);
-        setLoading(false);
-        clearTimeout(safetyTimer);
       })
-      .catch(err => {
+      .catch((err) => {
+        // Aborted requests are expected when switching filters.
+        if (err.name === "AbortError" || !isCurrentRequest) {
+          return;
+        }
+
         console.error("Fetch Error:", err);
-        setLoading(false); 
+        setData(null);
+      })
+      .finally(() => {
+        if (isCurrentRequest) {
+          setLoading(false);
+        }
       });
 
-    return () => clearTimeout(safetyTimer);
+    // Prevent an older request from updating the dashboard.
+    return () => {
+      isCurrentRequest = false;
+      controller.abort();
+    };
   }, [hubId, range]);
+
 
   // --- CHART DATA PREPARATION ---
   const hourlyData = useMemo(() => {
