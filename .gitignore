@@ -1,2 +1,6 @@
-node_modules
-serviceAccountKey.json
+smartlink-analytics/node_modules/
+dashboard-test/node_modules/
+smartlink-analytics/serviceAccountKey.json
+dashboard-test/dist/
+smartlink-analytics/dist/
+.env

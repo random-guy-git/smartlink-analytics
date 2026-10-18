@@ -3,8 +3,9 @@
 > A next-generation link management platform that adapts content based on user context.
 
 ## 🚀 Deployment
-* **Live Website:** []
+* **Live Website:** [INSERT_FRONTEND_DEPLOYMENT_LINK]
 * **Analytics Engine:** [https://smartlink-analytics-1.onrender.com]
+* **API Docs:** [Link to Swagger/Postman if available, otherwise delete this line]
 
 ---
 
